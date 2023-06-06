@@ -1,0 +1,178 @@
+
+// Cargando las variables de entorno.
+require('dotenv').config();
+//----------
+
+// Require de pluggins necesarios para discord.js.
+const { Client, Events, Message, GatewayIntentBits, REST, Routes, MessageEmbed, EmbedBuilder, Embed } = require('discord.js');
+const mongoose = require('mongoose');
+const Level = require('./Level.js');
+const calcXp = require('./calcXp.js');
+const { request } = require('undici');
+//----------
+
+// Creando una nueva instancia del cliente
+const client = new Client({
+ intents: [
+  GatewayIntentBits.Guilds,
+  GatewayIntentBits.GuildMembers,
+  GatewayIntentBits.GuildMessages,
+  GatewayIntentBits.MessageContent,
+ ],
+});
+//----------
+
+// Conenctandonos a la DB de mongoDB
+(async() => {
+ try {
+  mongoose.set('strictQuery', false);
+  await mongoose.connect(process.env.MONGODB_URI);
+  console.log('Conectado a la DB de cloud');
+ } catch (error) {
+  console.log(`Ha ocurrido un error: ${error}`);
+ }
+})();
+//----------
+
+// Mensaje de login del cliente
+client.on(Events.ClientReady, c => {
+  console.log(`Ready! Logged in as ${c.user.tag}.`);
+});
+//------------
+
+
+// -- Comienzo de comandos --
+
+// Interacciones activas
+
+//Tarjeta de bienvenida
+client.on('guildMemberAdd', member => {
+   // Necesitaria cojer dinamicamente la id del canal seleccionado para mensajes de bienvenida por ahora no funciona bien);
+   //const channel = member.guild.channels.cache.get(process.env.WELCOMECH_ID);
+   const channel = member.guild.channels.cache.find(ch => ch.name.includes('bienvenida'));
+   const embedW = new EmbedBuilder()
+	.setTitle(`Bienvenido/a a ${member.guild.name}!`)
+	.setImage(member.user.avatarURL())
+	.setDescription(`Hola ${member.displayName}! esperamos que tengas una agradable estancia.`);
+   channel.send({ embeds: [embedW] });
+});
+//-----
+
+// lvl up
+function getRandomXp(min, max){
+ min = Math.ceil(min);
+ max = Math.floor(max);
+
+ return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+client.on('messageCreate', async (msg) => {
+ if (!msg.inGuild() || msg.author.bot) return;
+
+ const xpToGive = getRandomXp(5, 15);
+
+ const query = {
+  userId: msg.author.id,
+  guildId: msg.guild.id,
+ };
+
+ try {
+  const level = await Level.findOne(query);
+
+  if (level) {
+   level.xp += xpToGive;
+
+   if (level.xp > calcXp(level.level)) {
+    level.xp = 0;
+    level.level += 1;
+
+    msg.channel.send(`Enhorabuena ${msg.member}! has alcanzado el nivel ${level.level}.`);
+   }
+   await level.save().catch((e) =>{
+    console.log(`Error saving update ${e}`);
+    return;
+   });
+  }
+
+  // Si el usuario no tiene nivel
+  else {
+   // Se crea nivel nuevo
+   const newLevel = new Level({
+    userId: msg.author.id,
+    userName: msg.author.username,
+    guildId: msg.guild.id,
+    xp: xpToGive,
+   });
+
+   await newLevel.save();
+  }
+
+ } catch (error) {
+  console.log(`Error with xp: ${error}`);
+ }
+});
+//-----
+
+// Interacciones pasivas
+
+// Interaction commands
+client.on(Events.InteractionCreate, async interaction => {
+
+    if (!interaction.isChatInputCommand()) return;
+
+    const { commandName } = interaction;
+    // ...
+    if (interaction.commandName === 'banana') {
+        await interaction.reply('Bananana!');
+    }
+    if (interaction.commandName === 'test') {
+        await interaction.reply('this is a test');
+    }
+    if (interaction.commandName === 'test2') {
+        await interaction.reply('this is a test2');
+    }
+    if (interaction.commandName === 'profile') {
+
+	const targetUserId = interaction.member.id;
+	const targetUserObj = await interaction.guild.members.fetch(targetUserId);
+
+	const fetchedLevel = await Level.findOne({
+		userId: targetUserId,
+		guildId: interaction.guild.id,
+	});
+
+	if (fetchedLevel.level === 0) {
+	 interaction.reply('Aun no tienes un perfil :(');
+	 return;
+        } else {
+	 const embed = new EmbedBuilder()
+		.setColor('#0099ff')
+		.setTitle(`Perfil de ${targetUserObj.user.username}`)
+		.setThumbnail(targetUserObj.user.displayAvatarURL({ dynamic: true }))
+		.setDescription(`Nivel: ${fetchedLevel.level} | xp: ${fetchedLevel.xp}`);
+		await interaction.reply({ embeds: [embed] });
+	}
+    }
+    if (interaction.commandName === 'leaderboard') {
+	if (!interaction.inGuild()) return;
+	const fetchedLevel = await Level.find({
+                        guildId: interaction.guild.id
+               }).sort({ level: -1, xp: -1 });
+	const fields = [];
+	for (let i = 0; i < fetchedLevel.length; i++) {
+                const usuario = fetchedLevel[i];
+                fields.push({ name:`#${i + 1} | ${usuario.userName}`, value:` Nivel:${usuario.level} - Experiencia: ${usuario.xp}`});
+        }
+	const embed = new EmbedBuilder()
+		.setColor('#0099ff')
+		.setTitle(`Leader Board del servidor ${interaction.guild.name}`)
+		.setDescription('Lista de usuarios')
+		.addFields(fields)
+		.setTimestamp();
+	await interaction.reply({ embeds: [embed] });
+    }
+});
+//----------
+
+//Procesando el token del bot
+client.login(process.env.TOKEN);
