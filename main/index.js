@@ -45,6 +45,11 @@ client.on(Events.ClientReady, c => {
 //Tarjeta de bienvenida
 client.on('guildMemberAdd', member => {
    const channel = member.guild.channels.cache.find(ch => ch.name.includes('bienvenida'));
+
+   if (!channel) {
+	console.log("No hay canal de bienvenida");
+	return;
+   }
    const embed = new EmbedBuilder()
 	.setColor('#a437db')
 	.setTitle(`Bienvenido/a a ${member.guild.name}!`)
@@ -129,7 +134,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		guildId: interaction.guild.id,
 	});
 
-	if (fetchedLevel.level === 0) {
+	if (!fetchedLevel) {
 	 interaction.reply('Aun no tienes un perfil.');
 	 return;
         } else {
@@ -142,6 +147,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		return;
 	}
     }
+
+    if (interaction.commandName === 'help') {
+	await interaction.reply("Necesita ayuda? consulte la pagina web oficial de idahow : https://idahow.vercel.app");
+    }
+
     if (interaction.commandName === 'leaderboard') {
 	if (!interaction.inGuild()) return;
 	const fetchedLevel = await Level.find({
